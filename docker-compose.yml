@@ -1,0 +1,19 @@
+version: "3.8"
+
+services:
+  image-similarity-app:
+    build: .
+    ports:
+      - "3000:3000"
+      - "8001:8001"
+    environment:
+      - KMP_DUPLICATE_LIB_OK=true
+      - NODE_ENV=production
+      - PYTHON_SERVICE_URL=http://localhost:8001
+    # No volumes needed since we're using CDN
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
