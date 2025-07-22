@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { SearchResult } from "@/types";
 
 // Python service configuration
 const PYTHON_SERVICE_URL =
@@ -8,20 +7,43 @@ const API_TIMEOUT = parseInt(process.env.API_TIMEOUT || "30000");
 const MAX_FILE_SIZE = parseInt(process.env.MAX_IMAGE_SIZE || "10485760"); // 10MB
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
+interface SearchResult {
+  id: string;
+  imageUrl: string;
+  similarity: number;
+  metadata: {
+    filename: string;
+    size: number;
+    uploadedAt: string;
+  };
+}
+
 interface SearchResponse {
   success: boolean;
-  results: SearchResult[];
-  totalResults: number;
-  searchTime: number;
+  results?: SearchResult[];
+  total_results?: number;
   error?: string;
-  queryType: "image" | "text" | "embedding";
+}
+
+interface PythonSearchResult {
+  index: number;
+  filename: string;
+  similarity: number;
+  distance: number;
+}
+
+interface PythonSearchResponse {
+  success: boolean;
+  results?: PythonSearchResult[];
+  total_results?: number;
+  error?: string;
 }
 
 async function callPythonService(
   endpoint: string,
-  data: any,
+  data: Record<string, unknown>,
   timeout: number = API_TIMEOUT
-): Promise<any> {
+): Promise<PythonSearchResponse> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeout);
 
@@ -89,31 +111,19 @@ async function imageToBase64(file: File): Promise<string> {
 }
 
 async function searchWithImage(imageData: string): Promise<SearchResponse> {
-  const startTime = Date.now();
-
   try {
-    // Generate embedding from image
-    const embedResponse = await callPythonService("/embed/image", {
-      image_data: imageData,
-    });
-
-    if (!embedResponse.embedding) {
-      throw new Error("Failed to generate image embedding");
-    }
-
-    // Search for similar images
+    // Search with image embedding
     const searchResponse = await callPythonService("/search", {
-      embedding: embedResponse.embedding,
+      embedding: imageData,
     });
 
-    const searchTime = Date.now() - startTime;
-
-    // Debug: Log the response structure
-    console.log("Search response:", JSON.stringify(searchResponse, null, 2));
+    if (!searchResponse.success || !searchResponse.results) {
+      throw new Error(searchResponse.error || "Search failed");
+    }
 
     // Transform results to match our interface
     const results: SearchResult[] = (searchResponse.results || []).map(
-      (result: any) => ({
+      (result: PythonSearchResult) => ({
         id: result.index.toString(),
         imageUrl: `https://drive.charpstar.net/indexing-test/images/${result.filename}`, // Use CDN URLs
         similarity: result.similarity,
@@ -128,111 +138,36 @@ async function searchWithImage(imageData: string): Promise<SearchResponse> {
     return {
       success: true,
       results,
-      totalResults: searchResponse.total_results,
-      searchTime,
-      queryType: "image",
+      total_results: results.length,
     };
   } catch (error) {
-    const searchTime = Date.now() - startTime;
     return {
       success: false,
-      results: [],
-      totalResults: 0,
-      searchTime,
       error: error instanceof Error ? error.message : "Unknown error",
-      queryType: "image",
     };
   }
 }
 
 async function searchWithText(text: string): Promise<SearchResponse> {
-  const startTime = Date.now();
-
   try {
-    // Generate embedding from text
-    const embedResponse = await callPythonService("/embed/text", {
+    // Search with text query
+    const searchResponse = await callPythonService("/search", {
       text: text,
     });
 
-    if (!embedResponse.embedding) {
-      throw new Error("Failed to generate text embedding");
+    if (!searchResponse.success || !searchResponse.results) {
+      throw new Error(searchResponse.error || "Search failed");
     }
 
-    // Search for similar images
-    const searchResponse = await callPythonService("/search", {
-      embedding: embedResponse.embedding,
-    });
-
-    const searchTime = Date.now() - startTime;
-
-    // Debug: Log the response structure
-    console.log(
-      "Text search response:",
-      JSON.stringify(searchResponse, null, 2)
-    );
-
     // Transform results to match our interface
     const results: SearchResult[] = (searchResponse.results || []).map(
-      (result: any) => ({
-        id: result.index.toString(),
-        imageUrl: `/api/images/${result.filename}`,
-        similarity: result.similarity,
-        metadata: {
-          filename: result.filename,
-          size: 0,
-          uploadedAt: new Date().toISOString(),
-        },
-      })
-    );
-
-    return {
-      success: true,
-      results,
-      totalResults: searchResponse.total_results,
-      searchTime,
-      queryType: "text",
-    };
-  } catch (error) {
-    const searchTime = Date.now() - startTime;
-    return {
-      success: false,
-      results: [],
-      totalResults: 0,
-      searchTime,
-      error: error instanceof Error ? error.message : "Unknown error",
-      queryType: "text",
-    };
-  }
-}
-
-async function searchWithEmbedding(
-  embedding: number[]
-): Promise<SearchResponse> {
-  const startTime = Date.now();
-
-  try {
-    // Search for similar images using the provided embedding
-    const searchResponse = await callPythonService("/search", {
-      embedding: embedding,
-    });
-
-    const searchTime = Date.now() - startTime;
-
-    // Debug: Log the response structure
-    console.log(
-      "Embedding search response:",
-      JSON.stringify(searchResponse, null, 2)
-    );
-
-    // Transform results to match our interface
-    const results: SearchResult[] = (searchResponse.results || []).map(
-      (result: any) => ({
+      (result: PythonSearchResult) => ({
         id: result.index.toString(),
         imageUrl: `https://drive.charpstar.net/indexing-test/images/${result.filename}`, // Use CDN URLs
         similarity: result.similarity,
         metadata: {
           filename: result.filename,
-          size: 0,
+          size: 0, // We don't have this info from Python service
           uploadedAt: new Date().toISOString(),
         },
       })
@@ -241,19 +176,12 @@ async function searchWithEmbedding(
     return {
       success: true,
       results,
-      totalResults: searchResponse.total_results,
-      searchTime,
-      queryType: "embedding",
+      total_results: results.length,
     };
   } catch (error) {
-    const searchTime = Date.now() - startTime;
     return {
       success: false,
-      results: [],
-      totalResults: 0,
-      searchTime,
       error: error instanceof Error ? error.message : "Unknown error",
-      queryType: "embedding",
     };
   }
 }
@@ -266,6 +194,7 @@ export async function POST(request: NextRequest) {
     if (contentType.includes("multipart/form-data")) {
       const formData = await request.formData();
       const file = formData.get("image") as File;
+      const queryType = formData.get("queryType") as string;
 
       if (!file) {
         return NextResponse.json(
@@ -296,34 +225,14 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Handle JSON data (text query or image data)
+    // Handle JSON data
     else if (contentType.includes("application/json")) {
       const body = await request.json();
+      const { text, embedding, queryType } = body;
 
-      // Check if it's a text query
-      if (body.text) {
-        const text = body.text;
-
-        if (!text || typeof text !== "string" || text.trim().length === 0) {
-          return NextResponse.json(
-            { success: false, error: "Text query is required" },
-            { status: 400 }
-          );
-        }
-
-        if (text.length > 1000) {
-          return NextResponse.json(
-            {
-              success: false,
-              error: "Text query too long (max 1000 characters)",
-            },
-            { status: 400 }
-          );
-        }
-
-        // Search with text
-        const result = await searchWithText(text.trim());
-
+      // Handle text search
+      if (text && queryType === "text") {
+        const result = await searchWithText(text);
         if (result.success) {
           return NextResponse.json(result);
         } else {
@@ -331,20 +240,9 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Check if it's image data (for testing purposes)
-      else if (body.image_data) {
-        const imageData = body.image_data;
-
-        if (!imageData || typeof imageData !== "string") {
-          return NextResponse.json(
-            { success: false, error: "Image data is required" },
-            { status: 400 }
-          );
-        }
-
-        // Search with image
-        const result = await searchWithImage(imageData);
-
+      // Handle embedding search
+      else if (embedding && queryType === "embedding") {
+        const result = await searchWithImage(embedding);
         if (result.success) {
           return NextResponse.json(result);
         } else {
@@ -352,34 +250,10 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Check if it's embedding data (for multi-image search)
-      else if (body.embedding) {
-        const embedding = body.embedding;
-
-        if (!embedding || !Array.isArray(embedding)) {
-          return NextResponse.json(
-            { success: false, error: "Valid embedding array is required" },
-            { status: 400 }
-          );
-        }
-
-        // Search with embedding
-        const result = await searchWithEmbedding(embedding);
-
-        if (result.success) {
-          return NextResponse.json(result);
-        } else {
-          return NextResponse.json(result, { status: 500 });
-        }
-      }
-
-      // Neither text, image_data, nor embedding provided
+      // No valid search parameters
       else {
         return NextResponse.json(
-          {
-            success: false,
-            error: "Either text, image_data, or embedding is required",
-          },
+          { success: false, error: "Either text or image_data is required" },
           { status: 400 }
         );
       }
@@ -391,7 +265,7 @@ export async function POST(request: NextRequest) {
         {
           success: false,
           error:
-            "Unsupported content type. Use multipart/form-data for images or application/json for text queries.",
+            "Unsupported content type. Use multipart/form-data for images or application/json for text/embedding.",
         },
         { status: 400 }
       );
@@ -402,11 +276,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         success: false,
-        results: [],
-        totalResults: 0,
-        searchTime: 0,
         error: error instanceof Error ? error.message : "Internal server error",
-        queryType: "unknown",
       },
       { status: 500 }
     );

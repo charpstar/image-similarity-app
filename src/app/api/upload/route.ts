@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import sharp from "sharp";
 
 export async function POST(request: NextRequest) {
   try {
@@ -8,54 +7,45 @@ export async function POST(request: NextRequest) {
 
     if (!file) {
       return NextResponse.json(
-        { success: false, error: "No image file provided" },
+        { error: "No image file provided" },
         { status: 400 }
       );
     }
 
     // Validate file type
-    const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
-    if (!allowedTypes.includes(file.type)) {
+    if (!file.type.startsWith("image/")) {
       return NextResponse.json(
-        {
-          success: false,
-          error: "Invalid file type. Only JPEG, PNG, and WebP are allowed",
-        },
+        { error: "File must be an image" },
         { status: 400 }
       );
     }
 
     // Validate file size (10MB limit)
-    const maxSize = 10 * 1024 * 1024;
+    const maxSize = 10 * 1024 * 1024; // 10MB
     if (file.size > maxSize) {
       return NextResponse.json(
-        { success: false, error: "File size too large. Maximum size is 10MB" },
+        { error: "File size must be less than 10MB" },
         { status: 400 }
       );
     }
 
-    // Process image with Sharp
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const processedImage = await sharp(buffer)
-      .resize(800, 800, { fit: "inside", withoutEnlargement: true })
-      .jpeg({ quality: 85 })
-      .toBuffer();
+    // Convert to base64 for processing
+    const arrayBuffer = await file.arrayBuffer();
+    const base64 = Buffer.from(arrayBuffer).toString("base64");
 
-    // TODO: Send to Python service for processing
-    // For now, return a mock response
-    const imageId = `img_${Date.now()}_${Math.random()
-      .toString(36)
-      .substr(2, 9)}`;
-
+    // For now, just return success
+    // In a real app, you might want to save the image or process it further
     return NextResponse.json({
       success: true,
-      imageId,
       message: "Image uploaded successfully",
+      filename: file.name,
+      size: file.size,
+      type: file.type,
     });
   } catch (error) {
     console.error("Upload error:", error);
     return NextResponse.json(
-      { success: false, error: "Failed to process image" },
+      { error: "Internal server error" },
       { status: 500 }
     );
   }
