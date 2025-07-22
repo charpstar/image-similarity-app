@@ -3,7 +3,7 @@ import { SearchResult } from "@/types";
 
 // Python service configuration
 const PYTHON_SERVICE_URL =
-  process.env.PYTHON_SERVICE_URL || "http://localhost:8001";
+  process.env.PYTHON_SERVICE_URL || "https://your-python-backend.vercel.app";
 const API_TIMEOUT = parseInt(process.env.API_TIMEOUT || "30000");
 const MAX_FILE_SIZE = parseInt(process.env.MAX_IMAGE_SIZE || "10485760"); // 10MB
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];

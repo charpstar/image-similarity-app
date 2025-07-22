@@ -2,25 +2,25 @@
   "version": 2,
   "builds": [
     {
-      "src": "src/app/api/**/*.ts",
-      "use": "@vercel/node"
-    },
-    {
-      "src": "search-service/main.py",
-      "use": "@vercel/python"
+      "src": "package.json",
+      "use": "@vercel/next"
     }
   ],
   "routes": [
     {
       "src": "/api/(.*)",
-      "dest": "/src/app/api/$1"
+      "dest": "/api/$1"
     },
     {
       "src": "/(.*)",
-      "dest": "/src/app/$1"
+      "dest": "/$1"
     }
   ],
   "env": {
-    "PYTHON_SERVICE_URL": "https://your-backend-url.vercel.app"
+    "CDN_BASE_URL": "https://drive.charpstar.net/indexing-test",
+    "PYTHON_SERVICE_URL": "https://your-python-backend.vercel.app",
+    "API_TIMEOUT": "30000",
+    "MAX_IMAGE_SIZE": "10485760",
+    "NODE_ENV": "production"
   }
 }
